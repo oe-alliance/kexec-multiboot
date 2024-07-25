@@ -1,5 +1,6 @@
 #! /bin/sh
 ### BEGIN INIT INFO
+# Version:              1.0.0
 # Provides:             kexec-multiboot-recovery
 # Required-Start:       $local_fs
 # Required-Stop:        
