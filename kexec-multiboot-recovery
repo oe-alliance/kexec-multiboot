@@ -1,6 +1,6 @@
-#! /bin/sh
+#!/bin/sh
 ### BEGIN INIT INFO
-# Version:              1.0.0
+# Version:              1.0.1
 # Provides:             kexec-multiboot-recovery
 # Required-Start:       $local_fs
 # Required-Stop:        
@@ -9,13 +9,13 @@
 # Short-Description:    Kexec kernel check
 ### END INIT INFO
 
-DRYRUN=true
+DRYRUN=false
 DEBUG=false
 
 DESC="Kexec kernel validity check...\n"
 
 STARTUP_PATH=""
-STARTUP_PATH=/boot # only for devel, comment out for final test
+#STARTUP_PATH=/boot # only for devel, comment out for final test
 
 KEXEC_KERNEL_PATH=/usr/bin/kernel_auto.bin
 
@@ -62,30 +62,45 @@ do_locate_current_image(){
     [ x${DEBUG} = xtrue ] && echo DEBUG:ROOT_DEST=${ROOT_DEST}
     [ x${DEBUG} = xtrue ] && echo DEBUG:KERNEL_DEST=${KERNEL_DEST}
 
+    #The rootfs in STARTUP slot could be defined as path or as UUID.
+    #Check if the fs is mounted, if not mount it and identify the mount point to use
+    ROOT_MOUNT_POINT=""
     if echo ${ROOT_DEST} | grep -qi "UUID="; then
         DEVICE=$(blkid | sed -n "/${ROOT_DEST#*=}/s/\([^:]\+\):.*/\\1/p")
         if [ x${DEVICE} != x ]; then
-            ROOT_DEST=`grep "^${DEVICE}" /proc/mounts | cut -d " " -f 2`
+            ROOT_MOUNT_POINT=`grep "^${DEVICE}" /proc/mounts | cut -d " " -f 2`
+            if [ x${ROOT_MOUNT_POINT} = x ]; then
+                mkdir -p /tmp/kexec-recovery
+                eval mount ${ROOT_DEST} /tmp/kexec-recovery
+                ROOT_MOUNT_POINT=`grep "^${DEVICE}" /proc/mounts | cut -d " " -f 2`
+            fi
         fi
     elif echo ${ROOT_DEST} | grep -q "^/dev/mmcblk"; then
-        ROOT_DEST=/boot
+        ROOT_MOUNT_POINT=${STARTUP_PATH}
     else
-        ROOT_DEST=`grep "^${ROOT_DEST}" /proc/mounts | cut -d " " -f 2`
+        ROOT_MOUNT_POINT=`grep "^${ROOT_DEST}" /proc/mounts | cut -d " " -f 2`
     fi
     [ x${DEBUG} = xtrue ] && echo DEBUG:ROOT_DEST=${ROOT_DEST}
+    [ x${DEBUG} = xtrue ] && echo DEBUG:ROOT_MOUNT_POINT=${ROOT_MOUNT_POINT}
     [ x${DEBUG} = xtrue ] && echo DEBUG:KERNEL_DEST=${KERNEL_DEST}
-    SELECTED_KERNEL_PATH=${ROOT_DEST}/${KERNEL_DEST}
+    SELECTED_KERNEL_PATH=${ROOT_MOUNT_POINT}/${KERNEL_DEST}
 }
 
 do_fix() {
     echo "- Backup running kernel into previous selected image"
     cmd="dd if=/dev/$KERNEL of=${SELECTED_KERNEL_PATH}"
+    echo "running: ${cmd}"
     [ x${DRYRUN} = xtrue ] && echo "DRYRUN: ${cmd}" || ${cmd}
     echo "- Restoring kexec multiboot kernel"
     cmd="dd if=/usr/bin/kernel_auto.bin of=/dev/$KERNEL"
+    echo "running: ${cmd}"
     [ x${DRYRUN} = xtrue ] && echo "DRYRUN: ${cmd}" || ${cmd}
-    cmd="reboot"
-    [ x${DRYRUN} = xtrue ] && echo "DRYRUN: ${cmd}" || ${cmd}
+    cmd="sync; sync; sync"
+    [ x${DRYRUN} = xtrue ] && echo "DRYRUN: ${cmd}" || eval ${cmd}
+    cmd="reboot -d -f"
+    [ x${DRYRUN} = xtrue ] && echo "DRYRUN: ${cmd}" || eval ${cmd}
+    #/sbin/reboot -d -f
+    #/sbin/init 6
 }
 
 do_check() {
